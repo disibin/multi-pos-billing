@@ -1,6 +1,6 @@
 import { cookies } from 'next/headers';
 import { query } from '@/lib/db';
-import { hashPassword, comparePassword, verifyToken, authenticateStaff } from '@/lib/auth';
+import { hashPassword, comparePassword, verifyToken, authenticateStaff, isAdmin } from '@/lib/auth';
 import { sendEmail } from '@/lib/mailer';
 import { getBaseUrl, STORE_NAME } from '@/lib/secret';
 import crypto from 'crypto';
@@ -53,6 +53,15 @@ export async function POST(req) {
       return Response.json({ error: 'Name, email, and password are required' }, { status: 400 });
     }
 
+    const targetRole = role && ['admin', 'manager', 'sales', 'staff'].includes(role) ? role : 'staff';
+    if (['admin', 'manager', 'sales'].includes(targetRole)) {
+      const adminAuth = await isAdmin();
+      if (!adminAuth.success) {
+        return Response.json({ error: 'Access denied: Admin role required to create elevated staff accounts' }, { status: 403 });
+      }
+    }
+    const validRole = targetRole;
+
     const checkStaff = await query('SELECT staff_id FROM staffs WHERE email = $1', [email.trim().toLowerCase()]);
     if (checkStaff.rows.length > 0) {
       return Response.json({ error: 'Email is already registered' }, { status: 400 });
@@ -60,7 +69,6 @@ export async function POST(req) {
 
     const hashedPassword = await hashPassword(password);
     const verificationToken = crypto.randomBytes(32).toString('hex');
-    const validRole = role && ['admin', 'manager', 'sales', 'staff'].includes(role) ? role : 'staff';
     const branchIdVal = branch_id ? parseInt(branch_id, 10) : null;
 
     const result = await query(

@@ -1,11 +1,16 @@
 import { query } from '@/lib/db';
 import pool from '@/lib/db';
-import { authenticateUser } from '@/lib/auth';
+import { authenticateStaff } from '@/lib/auth';
 import { recordActivityLog } from '@/lib/logger';
 import { updateAvailableBalance, allocateOrderProfit } from '@/lib/financial';
 
 export async function GET(req) {
   try {
+    const auth = await authenticateStaff();
+    if (!auth.success) {
+      return Response.json({ error: auth.message || 'Unauthorized staff access' }, { status: 401 });
+    }
+
     const url = new URL(req.url);
     const status = url.searchParams.get('status');
 
@@ -86,7 +91,11 @@ export async function POST(req) {
       return Response.json({ error: 'Sales are currently paused' }, { status: 403 });
     }
 
-    const auth = await authenticateUser();
+    const auth = await authenticateStaff();
+    if (is_pos && !auth.success) {
+      client.release();
+      return Response.json({ error: 'Unauthorized POS sale. Active staff session required.' }, { status: 401 });
+    }
     const staffId = auth.success && auth.user ? (auth.user.staff_id || auth.user.user_id) : null;
 
     let creatorBranchId = auth.success && auth.user?.branch_id ? auth.user.branch_id : null;
